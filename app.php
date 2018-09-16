@@ -240,6 +240,7 @@ $app->post('/api/actions/login', function (Request $request, Response $response)
 
 $app->post('/api/actions/logout', function (Request $request, Response $response): Response {
     unset($_COOKIE['user_id']);
+    setcookie('user_id', null, -1, '/');
 
     return $response->withStatus(204);
 })->add($login_required);
@@ -518,6 +519,7 @@ $app->post('/admin/api/actions/login', function (Request $request, Response $res
 
 $app->post('/admin/api/actions/logout', function (Request $request, Response $response): Response {
     unset($_COOKIE['administrator_id']);
+    setcookie('administrator_id', null, -1, '/');
 
     return $response->withStatus(204);
 })->add($admin_login_required);
