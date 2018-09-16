@@ -4,7 +4,6 @@ use Slim\Http\Request;
 use Slim\Http\Response;
 use Torb\PDOWrapper;
 use Psr\Container\ContainerInterface;
-use SlimSession\Helper;
 
 date_default_timezone_set('Asia/Tokyo');
 define('TWIG_TEMPLATE', realpath(__DIR__).'/views');
@@ -49,16 +48,6 @@ $container['view'] = function ($container) {
     $view->addExtension(new \Slim\Views\TwigExtension($container['router'], $baseUrl($container['request'])));
 
     return $view;
-};
-
-$app->add(new \Slim\Middleware\Session([
-    'name' => 'torb_session',
-    'autorefresh' => true,
-    'lifetime' => '1 week',
-]));
-
-$container['session'] = function (): Helper {
-    return new Helper();
 };
 
 $login_required = function (Request $request, Response $response, callable $next): Response {
@@ -126,6 +115,11 @@ $app->post('/api/users', function (Request $request, Response $response): Respon
     try {
         $this->dbh->execute('INSERT INTO users (login_name, pass_hash, nickname) VALUES (?, ?, ?)', $login_name, hash('sha256', $password), $nickname);
         $user_id = $this->dbh->last_insert_id();
+        $this->dbh->commit();
+
+        setcookie('user_id', $user_id, time()+60*60*24*30, '/'); // 30days
+        setcookie('login_name', $login_name, time()+60*60*24*30, '/'); // 30days
+        setcookie('nickname', $nickname, time()+60*60*24*30, '/'); // 30days
     } catch (\Throwable $throwable) {
         return res_error($response, 'duplicated', 409);
     }
@@ -143,14 +137,12 @@ $app->post('/api/users', function (Request $request, Response $response): Respon
  */
 function get_login_user(ContainerInterface $app)
 {
-    /** @var Helper $session */
-    $session = $app->session;
-    $user_id = $session->get('user_id');
-    if (null === $user_id) {
+    // TODO
+    if(!isset($_COOKIE["user_id"])){
         return false;
     }
 
-    $user = $app->dbh->select_row('SELECT id, nickname FROM users WHERE id = ?', $user_id);
+    $user = $app->dbh->select_row('SELECT id, nickname FROM users WHERE id = ?', $_COOKIE["user_id"]);
     $user['id'] = (int) $user['id'];
     return $user;
 }
@@ -226,19 +218,18 @@ $app->post('/api/actions/login', function (Request $request, Response $response)
         return res_error($response, 'authentication_failed', 401);
     }
 
-    /** @var Helper $session */
-    $session = $this->session;
-    $session->set('user_id', $user['id']);
+    setcookie('user_id', $user['id'], time()+60*60*24*30, '/'); // 30days
+    setcookie('login_name', $user['login_name'], time()+60*60*24*30, '/'); // 30days
+    setcookie('nickname', $user['nickname'], time()+60*60*24*30, '/'); // 30days
 
-    $user = get_login_user($this);
+//    $user = get_login_user($this);
 
     return $response->withJson($user, null, JSON_NUMERIC_CHECK);
 });
 
 $app->post('/api/actions/logout', function (Request $request, Response $response): Response {
-    /** @var Helper $session */
-    $session = $this->session;
-    $session->delete('user_id');
+    unset($_COOKIE['user_id']);
+    setcookie('user_id', null, -1, '/');
 
     return $response->withStatus(204);
 })->add($login_required);
@@ -509,17 +500,16 @@ $app->post('/admin/api/actions/login', function (Request $request, Response $res
         return res_error($response, 'authentication_failed', 401);
     }
 
-    /** @var Helper $session */
-    $session = $this->session;
-    $session->set('administrator_id', $administrator['id']);
+    setcookie('administrator_id', $administrator['id'], time()+60*60*24*30, '/');
+    setcookie('admin_login_name', $administrator['login_name'], time()+60*60*24*30., '/');
+    setcookie('admin_nickname', $administrator['nickname'], time()+60*60*24*30, '/');
 
     return $response->withJson($administrator, null, JSON_NUMERIC_CHECK);
 });
 
 $app->post('/admin/api/actions/logout', function (Request $request, Response $response): Response {
-    /** @var Helper $session */
-    $session = $this->session;
-    $session->delete('administrator_id');
+    unset($_COOKIE['administrator_id']);
+    setcookie('administrator_id', null, -1, '/');
 
     return $response->withStatus(204);
 })->add($admin_login_required);
@@ -531,14 +521,12 @@ $app->post('/admin/api/actions/logout', function (Request $request, Response $re
  */
 function get_login_administrator(ContainerInterface $app)
 {
-    /** @var Helper $session */
-    $session = $app->session;
-    $administrator_id = $session->get('administrator_id');
-    if (null === $administrator_id) {
+    if (!isset($_COOKIE['administrator_id'])) {
         return false;
     }
 
-    $administrator = $app->dbh->select_row('SELECT id, nickname FROM administrators WHERE id = ?', $administrator_id);
+    // TODO
+    $administrator = $app->dbh->select_row('SELECT id, nickname FROM administrators WHERE id = ?', $_COOKIE['administrator_id']);
     $administrator['id'] = (int) $administrator['id'];
     return $administrator;
 }
