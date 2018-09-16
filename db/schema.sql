@@ -19,8 +19,7 @@ CREATE TABLE IF NOT EXISTS sheets (
     `rank`      VARCHAR(128)     NOT NULL,
     num         INTEGER UNSIGNED NOT NULL,
     price       INTEGER UNSIGNED NOT NULL,
-    UNIQUE KEY rank_num_uniq (`rank`, num),
-	KEY occupied_key (occupied),
+    UNIQUE KEY rank_num_uniq (`rank`, num)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS reservations (
