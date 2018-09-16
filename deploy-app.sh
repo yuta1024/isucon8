@@ -2,6 +2,11 @@
 
 set -eu
 
+if [ `hostname` != '118-27-29-179' -a `hostname` != '118-27-11-157' ]; then
+  echo "abort: This server is not App server!"
+  exit 1
+fi
+
 # app
 sudo cp -r {*.php,lib,views} /home/isucon/torb/webapp/php/
 
