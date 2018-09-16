@@ -126,9 +126,9 @@ $app->post('/api/users', function (Request $request, Response $response): Respon
         $user_id = $this->dbh->last_insert_id();
         $this->dbh->commit();
 
-        setcookie('user_id', $user_id, time()+60*60*24*30); // 30days
-        setcookie('login_name', $login_name, time()+60*60*24*30); // 30days
-        setcookie('nickname', $nickname, time()+60*60*24*30); // 30days
+        setcookie('user_id', $user_id, time()+60*60*24*30, '/'); // 30days
+        setcookie('login_name', $login_name, time()+60*60*24*30, '/'); // 30days
+        setcookie('nickname', $nickname, time()+60*60*24*30, '/'); // 30days
     } catch (\Throwable $throwable) {
         $this->dbh->rollback();
 
@@ -229,9 +229,9 @@ $app->post('/api/actions/login', function (Request $request, Response $response)
         return res_error($response, 'authentication_failed', 401);
     }
 
-    setcookie('user_id', $user['id'], time()+60*60*24*30); // 30days
-    setcookie('login_name', $user['login_name'], time()+60*60*24*30); // 30days
-    setcookie('nickname', $user['nickname'], time()+60*60*24*30); // 30days
+    setcookie('user_id', $user['id'], time()+60*60*24*30, '/'); // 30days
+    setcookie('login_name', $user['login_name'], time()+60*60*24*30, '/'); // 30days
+    setcookie('nickname', $user['nickname'], time()+60*60*24*30, '/'); // 30days
 
     $user = get_login_user($this);
 
@@ -509,9 +509,9 @@ $app->post('/admin/api/actions/login', function (Request $request, Response $res
         return res_error($response, 'authentication_failed', 401);
     }
 
-    setcookie('administrator_id', $administrator['id'], time()+60*60*24*30);
-    setcookie('admin_login_name', $administrator['login_name'], time()+60*60*24*30);
-    setcookie('admin_nickname', $administrator['nickname'], time()+60*60*24*30);
+    setcookie('administrator_id', $administrator['id'], time()+60*60*24*30, '/');
+    setcookie('admin_login_name', $administrator['login_name'], time()+60*60*24*30., '/');
+    setcookie('admin_nickname', $administrator['nickname'], time()+60*60*24*30, '/');
 
     return $response->withJson($administrator, null, JSON_NUMERIC_CHECK);
 });
