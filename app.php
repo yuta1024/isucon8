@@ -133,7 +133,7 @@ $app->post('/api/users', function (Request $request, Response $response): Respon
             return res_error($response, 'duplicated', 409);
         }
 
-        $this->dbh->execute('INSERT INTO users (login_name, pass_hash, nickname) VALUES (?, SHA2(?, 256), ?)', $login_name, $password, $nickname);
+        $this->dbh->execute('INSERT INTO users (login_name, pass_hash, nickname) VALUES (?, ?, ?)', $login_name, hash('sha256', $password), $nickname);
         $user_id = $this->dbh->last_insert_id();
         $this->dbh->commit();
     } catch (\Throwable $throwable) {
@@ -232,7 +232,7 @@ $app->post('/api/actions/login', function (Request $request, Response $response)
     $password = $request->getParsedBodyParam('password');
 
     $user = $this->dbh->select_row('SELECT * FROM users WHERE login_name = ?', $login_name);
-    $pass_hash = $this->dbh->select_one('SELECT SHA2(?, 256)', $password);
+    $pass_hash = hash('sha256', $password); //$this->dbh->select_one('SELECT SHA2(?, 256)', $password);
 
     if (!$user || $pass_hash != $user['pass_hash']) {
         return res_error($response, 'authentication_failed', 401);
@@ -536,7 +536,7 @@ $app->post('/admin/api/actions/login', function (Request $request, Response $res
     $password = $request->getParsedBodyParam('password');
 
     $administrator = $this->dbh->select_row('SELECT * FROM administrators WHERE login_name = ?', $login_name);
-    $pass_hash = $this->dbh->select_one('SELECT SHA2(?, 256)', $password);
+    $pass_hash = hash('sha256', $password); //$this->dbh->select_one('SELECT SHA2(?, 256)', $password);
 
     if (!$administrator || $pass_hash != $administrator['pass_hash']) {
         return res_error($response, 'authentication_failed', 401);
