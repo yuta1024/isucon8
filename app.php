@@ -2,7 +2,6 @@
 
 use Slim\Http\Request;
 use Slim\Http\Response;
-use Torb\PDOWrapper;
 use Psr\Container\ContainerInterface;
 
 date_default_timezone_set('Asia/Tokyo');
@@ -69,24 +68,16 @@ $fillin_user = function (Request $request, Response $response, callable $next): 
 };
 
 $container['dbh'] = function (): PDOWrapper {
-    $database = 'torb';
-    $host = '172.17.119.2';
-    $port = 3306;
-    $user = 'isucon';
-    $password = 'isucon';
-
-    $dsn = "mysql:host={$host};port={$port};dbname={$database};charset=utf8mb4;";
-    $pdo = new PDO(
-        $dsn,
-        $user,
-        $password,
+    return new PDOWrapper(new PDO(
+        'mysql:host=172.17.119.2;port=3306;dbname=torb;charset=utf8mb4;',
+        'isucon',
+        'isucon',
         [
             PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
             PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+            PDO::ATTR_PERSISTENT => true,
         ]
-    );
-
-    return new PDOWrapper($pdo);
+    ));
 };
 
 $app->get('/', function (Request $request, Response $response): Response {
@@ -136,14 +127,9 @@ $app->post('/api/users', function (Request $request, Response $response): Respon
  */
 function get_login_user(ContainerInterface $app)
 {
-    // TODO
     if(!isset($_COOKIE["user_id"])){
         return false;
     }
-
-//    $user = $app->dbh->select_row('SELECT id, nickname FROM users WHERE id = ?', $_COOKIE["user_id"]);
-//    $user['id'] = (int) $user['id'];
-//    return $user;
     return [
         'id' => (int)$_COOKIE["user_id"],
         'nickname' => $_COOKIE["nickname"],
@@ -215,7 +201,7 @@ $app->post('/api/actions/login', function (Request $request, Response $response)
     $login_name = $request->getParsedBodyParam('login_name');
     $password = $request->getParsedBodyParam('password');
 
-    $user = $this->dbh->select_row('SELECT * FROM users WHERE login_name = ?', $login_name);
+    $user = $this->dbh->select_row('SELECT id, login_name, nickname, pass_hash FROM users WHERE login_name = ?', $login_name);
     $pass_hash = hash('sha256', $password); //$this->dbh->select_one('SELECT SHA2(?, 256)', $password);
 
     if (!$user || $pass_hash != $user['pass_hash']) {
@@ -527,10 +513,6 @@ function get_login_administrator(ContainerInterface $app)
         return false;
     }
 
-    // TODO
-//    $administrator = $app->dbh->select_row('SELECT id, nickname FROM administrators WHERE id = ?', $_COOKIE['administrator_id']);
-//    $administrator['id'] = (int) $administrator['id'];
-//    return $administrator;
     return [
         'id' => (int)$_COOKIE['administrator_id'],
         'nickname' => $_COOKIE['admin_nickname'],
@@ -681,3 +663,61 @@ function res_error(Response $response, string $error = 'unknown', int $status = 
         ->withHeader('Content-type', 'application/json')
         ->withJson(['error' => $error]);
 }
+
+class PDOWrapper
+{
+    private $pdo;
+
+    public function __call($name, $arguments)
+    {
+        return call_user_func_array([$this->pdo, $name], $arguments);
+    }
+
+    public function __construct(PDO $pdo)
+    {
+        $this->pdo = $pdo;
+        $this->pdo->query('SET SESSION sql_mode="STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION"');
+    }
+
+    public function select_one(string $query, ...$params)
+    {
+        $stmt = $this->pdo->prepare($query);
+        $stmt->execute($params);
+        $row = $stmt->fetch(PDO::FETCH_NUM);
+        $stmt->closeCursor();
+
+        return $row[0];
+    }
+
+    public function select_all(string $query, ...$params): array
+    {
+        $stmt = $this->pdo->prepare($query);
+        $stmt->execute($params);
+
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+
+    public function select_row(string $query, ...$params)
+    {
+        $stmt = $this->pdo->prepare($query);
+        $stmt->execute($params);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        $stmt->closeCursor();
+
+        return $row;
+    }
+
+    public function execute($query, ...$params): bool
+    {
+        $stmt = $this->pdo->prepare($query);
+
+        return $stmt->execute($params);
+    }
+
+    public function last_insert_id()
+    {
+        return $this->pdo->lastInsertId();
+    }
+}
+
+
