@@ -11,6 +11,30 @@ define('TWIG_TEMPLATE', realpath(__DIR__).'/views');
 
 $container = $app->getContainer();
 
+$all_sheets = array(
+    array('offset' =>   1, 'rank' => 'S', 'count' =>  50, 'price' => 5000),
+    array('offset' =>  51, 'rank' => 'A', 'count' => 150, 'price' => 3000),
+    array('offset' => 201, 'rank' => 'B', 'count' => 300, 'price' => 1000),
+    array('offset' => 501, 'rank' => 'C', 'count' => 500, 'price' =>    0),
+);
+
+$all_sheets_by_rank = array(
+    'S' => $all_sheets[0],
+    'A' => $all_sheets[1],
+    'B' => $all_sheets[2],
+    'C' => $all_sheets[3],
+);
+
+function get_sheet_by_id($id) {
+    global $all_sheets;
+
+    foreach ($all_sheets as $s) {
+        if ($id < $s['offset'] + $s['count']) {
+            return $s;
+        }
+    }
+}
+
 $container['view'] = function ($container) {
     $view = new \Slim\Views\Twig(TWIG_TEMPLATE);
 
@@ -56,11 +80,11 @@ $fillin_user = function (Request $request, Response $response, callable $next): 
 };
 
 $container['dbh'] = function (): PDOWrapper {
-    $database = getenv('DB_DATABASE');
-    $host = getenv('DB_HOST');
-    $port = getenv('DB_PORT');
-    $user = getenv('DB_USER');
-    $password = getenv('DB_PASS');
+    $database = 'torb';
+    $host = '127.0.0.1';
+    $port = 3306;
+    $user = 'isucon';
+    $password = 'isucon';
 
     $dsn = "mysql:host={$host};port={$port};dbname={$database};charset=utf8mb4;";
     $pdo = new PDO(
@@ -109,7 +133,7 @@ $app->post('/api/users', function (Request $request, Response $response): Respon
             return res_error($response, 'duplicated', 409);
         }
 
-        $this->dbh->execute('INSERT INTO users (login_name, pass_hash, nickname) VALUES (?, SHA2(?, 256), ?)', $login_name, $password, $nickname);
+        $this->dbh->execute('INSERT INTO users (login_name, pass_hash, nickname) VALUES (?, ?, ?)', $login_name, hash('sha256', $password), $nickname);
         $user_id = $this->dbh->last_insert_id();
         $this->dbh->commit();
     } catch (\Throwable $throwable) {
@@ -208,7 +232,7 @@ $app->post('/api/actions/login', function (Request $request, Response $response)
     $password = $request->getParsedBodyParam('password');
 
     $user = $this->dbh->select_row('SELECT * FROM users WHERE login_name = ?', $login_name);
-    $pass_hash = $this->dbh->select_one('SELECT SHA2(?, 256)', $password);
+    $pass_hash = hash('sha256', $password); //$this->dbh->select_one('SELECT SHA2(?, 256)', $password);
 
     if (!$user || $pass_hash != $user['pass_hash']) {
         return res_error($response, 'authentication_failed', 401);
@@ -303,34 +327,46 @@ function get_event(PDOWrapper $dbh, int $event_id, ?int $login_user_id = null): 
         $event['sheets'][$rank]['remains'] = 0;
     }
 
-    $sheets = $dbh->select_all('SELECT * FROM sheets ORDER BY `rank`, num');
+    global $all_sheets;
+    $sheets = $all_sheets;
     foreach ($sheets as $sheet) {
         $event['sheets'][$sheet['rank']]['price'] = $event['sheets'][$sheet['rank']]['price'] ?? $event['price'] + $sheet['price'];
 
-        ++$event['total'];
-        ++$event['sheets'][$sheet['rank']]['total'];
 
-        $reservation = $dbh->select_row('SELECT * FROM reservations WHERE event_id = ? AND sheet_id = ? AND canceled_at IS NULL GROUP BY event_id, sheet_id HAVING reserved_at = MIN(reserved_at)', $event['id'], $sheet['id']);
-        if ($reservation) {
-            $sheet['mine'] = $login_user_id && $reservation['user_id'] == $login_user_id;
-            $sheet['reserved'] = true;
-            $sheet['reserved_at'] = (new \DateTime("{$reservation['reserved_at']}", new DateTimeZone('UTC')))->getTimestamp();
-        } else {
-            ++$event['remains'];
-            ++$event['sheets'][$sheet['rank']]['remains'];
+        $reservations_select = $dbh->select_all('SELECT * FROM reservations WHERE event_id = ? AND sheet_id >= ? AND sheet_id < ? AND canceled_at IS NULL GROUP BY event_id, sheet_id HAVING reserved_at = MIN(reserved_at)', $event['id'], $sheet['offset'], $sheet['offset'] + $sheet['count']);
+
+        $reservations = array();
+
+        foreach ($reservations_select as $r) {
+            $reservations[(int)($r['sheet_id'])] = $r;
         }
 
-        $sheet['num'] = $sheet['num'];
-        $rank = $sheet['rank'];
-        unset($sheet['id']);
-        unset($sheet['price']);
-        unset($sheet['rank']);
+        for ($sheet_id = $sheet['offset']; $sheet_id < $sheet['offset'] + $sheet['count']; ++$sheet_id) {
+            ++$event['total'];
+            ++$event['sheets'][$sheet['rank']]['total'];
 
-        if (false === isset($event['sheets'][$rank]['detail'])) {
-            $event['sheets'][$rank]['detail'] = [];
+            $s = $sheet;
+            $s['num'] = $sheet_id - $sheet['offset'] + 1;
+
+            if (array_key_exists($sheet_id, $reservations)) {
+                $s['mine'] = $login_user_id && $reservations[$sheet_id]['user_id'] == $login_user_id;
+                $s['reserved'] = true;
+                $s['reserved_at'] = (new \DateTime("{$reservations[$sheet_id]['reserved_at']}", new DateTimeZone('UTC')))->getTimestamp();
+            } else {
+                ++$event['remains'];
+                ++$event['sheets'][$s['rank']]['remains'];
+            }
+
+            $rank = $s['rank'];
+            unset($s['price']);
+            unset($s['rank']);
+
+            if (false === isset($event['sheets'][$rank]['detail'])) {
+                $event['sheets'][$rank]['detail'] = [];
+            }
+
+            array_push($event['sheets'][$rank]['detail'], $s);
         }
-
-        array_push($event['sheets'][$rank]['detail'], $sheet);
     }
 
     $event['public'] = $event['public_fg'] ? true : false;
@@ -352,8 +388,8 @@ function sanitize_event(array $event): array
 }
 
 $app->post('/api/events/{id}/actions/reserve', function (Request $request, Response $response, array $args): Response {
-    $event_id = $args['id'];
-    $rank = $request->getParsedBodyParam('sheet_rank');
+        $event_id = $args['id'];
+        $rank = $request->getParsedBodyParam('sheet_rank');
 
     $user = get_login_user($this);
     $event = get_event($this->dbh, $event_id, $user['id']);
@@ -368,30 +404,31 @@ $app->post('/api/events/{id}/actions/reserve', function (Request $request, Respo
 
     $sheet = null;
     $reservation_id = null;
-    while (true) {
-        $sheet = $this->dbh->select_row('SELECT * FROM sheets WHERE id NOT IN (SELECT sheet_id FROM reservations WHERE event_id = ? AND canceled_at IS NULL FOR UPDATE) AND `rank` = ? ORDER BY RAND() LIMIT 1', $event['id'], $rank);
-        if (!$sheet) {
+
+    global $all_sheets_by_rank;
+    $sheet = $all_sheets_by_rank[$rank];
+
+
+    try {
+        $this->dbh->execute('INSERT INTO reservations (event_id, sheet_id, user_id, reserved_at) VALUES (?, (SELECT id FROM sheets WHERE id NOT IN (SELECT sheet_id FROM reservations AS r WHERE event_id = ? AND canceled_at IS NULL) AND `rank` = ? ORDER BY RAND() LIMIT 1), ?, ?)',
+                                     $event['id'], $event['id'], $rank, $user['id'],
+                                     (new DateTime('now', new \DateTimeZone('UTC')))->format('Y-m-d H:i:s.u')
+                            );
+        $reservation_id = (int) $this->dbh->last_insert_id();
+    } catch (\Exception $e) {
+        if (count($occupied_sheets) === (int)($sheet['count'])) {
             return res_error($response, 'sold_out', 409);
         }
-
-        $this->dbh->beginTransaction();
-        try {
-            $this->dbh->execute('INSERT INTO reservations (event_id, sheet_id, user_id, reserved_at) VALUES (?, ?, ?, ?)', $event['id'], $sheet['id'], $user['id'], (new DateTime('now', new \DateTimeZone('UTC')))->format('Y-m-d H:i:s.u'));
-            $reservation_id = (int) $this->dbh->last_insert_id();
-
-            $this->dbh->commit();
-        } catch (\Exception $e) {
-            $this->dbh->rollback();
-            continue;
-        }
-
-        break;
     }
+
+    $success = $this->dbh->select_row('SELECT sheet_id FROM reservations WHERE id = ?', $reservation_id);
+
+    $sheet_id = $success['sheet_id'];
 
     return $response->withJson([
         'id' => $reservation_id,
         'sheet_rank' => $rank,
-        'sheet_num' => $sheet['num'],
+        'sheet_num' => $sheet_id - $sheet['offset'] + 1,
     ], 202, JSON_NUMERIC_CHECK);
 })->add($login_required);
 
@@ -418,7 +455,7 @@ $app->delete('/api/events/{id}/sheets/{ranks}/{num}/reservation', function (Requ
 
     $this->dbh->beginTransaction();
     try {
-        $reservation = $this->dbh->select_row('SELECT * FROM reservations WHERE event_id = ? AND sheet_id = ? AND canceled_at IS NULL GROUP BY event_id HAVING reserved_at = MIN(reserved_at) FOR UPDATE', $event['id'], $sheet['id']);
+        $reservation = $this->dbh->select_row('SELECT * FROM reservations WHERE event_id = ? AND sheet_id = ? AND canceled_at IS NULL GROUP BY event_id HAVING reserved_at = MIN(reserved_at)', $event['id'], $sheet['id']);
         if (!$reservation) {
             $this->dbh->rollback();
 
@@ -478,7 +515,7 @@ $app->post('/admin/api/actions/login', function (Request $request, Response $res
     $password = $request->getParsedBodyParam('password');
 
     $administrator = $this->dbh->select_row('SELECT * FROM administrators WHERE login_name = ?', $login_name);
-    $pass_hash = $this->dbh->select_one('SELECT SHA2(?, 256)', $password);
+    $pass_hash = hash('sha256', $password); //$this->dbh->select_one('SELECT SHA2(?, 256)', $password);
 
     if (!$administrator || $pass_hash != $administrator['pass_hash']) {
         return res_error($response, 'authentication_failed', 401);
@@ -595,7 +632,7 @@ $app->get('/admin/api/reports/events/{id}/sales', function (Request $request, Re
 
     $reports = [];
 
-    $reservations = $this->dbh->select_all('SELECT r.*, s.rank AS sheet_rank, s.num AS sheet_num, s.price AS sheet_price, e.price AS event_price FROM reservations r INNER JOIN sheets s ON s.id = r.sheet_id INNER JOIN events e ON e.id = r.event_id WHERE r.event_id = ? ORDER BY reserved_at ASC FOR UPDATE', $event['id']);
+    $reservations = $this->dbh->select_all('SELECT r.*, s.rank AS sheet_rank, s.num AS sheet_num, s.price AS sheet_price, e.price AS event_price FROM reservations r INNER JOIN sheets s ON s.id = r.sheet_id INNER JOIN events e ON e.id = r.event_id WHERE r.event_id = ? ORDER BY reserved_at ASC', $event['id']);
     foreach ($reservations as $reservation) {
         $report = [
             'reservation_id' => $reservation['id'],
@@ -616,7 +653,7 @@ $app->get('/admin/api/reports/events/{id}/sales', function (Request $request, Re
 
 $app->get('/admin/api/reports/sales', function (Request $request, Response $response): Response {
     $reports = [];
-    $reservations = $this->dbh->select_all('SELECT r.*, s.rank AS sheet_rank, s.num AS sheet_num, s.price AS sheet_price, e.id AS event_id, e.price AS event_price FROM reservations r INNER JOIN sheets s ON s.id = r.sheet_id INNER JOIN events e ON e.id = r.event_id ORDER BY reserved_at ASC FOR UPDATE');
+    $reservations = $this->dbh->select_all('SELECT r.*, s.rank AS sheet_rank, s.num AS sheet_num, s.price AS sheet_price, e.id AS event_id, e.price AS event_price FROM reservations r INNER JOIN sheets s ON s.id = r.sheet_id INNER JOIN events e ON e.id = r.event_id ORDER BY reserved_at ASC');
     foreach ($reservations as $reservation) {
         $report = [
             'reservation_id' => $reservation['id'],
