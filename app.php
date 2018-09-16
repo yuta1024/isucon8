@@ -316,40 +316,40 @@ function get_event(PDOWrapper $dbh, int $event_id, ?int $login_user_id = null): 
         $event['sheets'][$sheet['rank']]['price'] = $event['sheets'][$sheet['rank']]['price'] ?? $event['price'] + $sheet['price'];
 
 
-        $reservations_select = $dbh->select_all('SELECT * FROM reservations WHERE event_id = ? AND sheet_id >= ? AND sheet_id < ? AND canceled_at IS NULL GROUP BY event_id, sheet_id HAVING reserved_at = MIN(reserved_at)', $event['id'], $sheet['offset'], $sheet['count'] + $sheet['count']);
+        $reservations_select = $dbh->select_all('SELECT * FROM reservations WHERE event_id = ? AND sheet_id >= ? AND sheet_id < ? AND canceled_at IS NULL GROUP BY event_id, sheet_id HAVING reserved_at = MIN(reserved_at)', $event['id'], $sheet['offset'], $sheet['offset'] + $sheet['count']);
 
-		$reservations = array();
+        $reservations = array();
 
-		foreach ($reservations_select as $r) {
-			$reservations[(int)($r['sheet_id'])] = $r;
-		}
+        foreach ($reservations_select as $r) {
+            $reservations[(int)($r['sheet_id'])] = $r;
+        }
 
-		for ($sheet_id = $sheet['offset']; $sheet_id < $sheet['offset'] + $sheet['count']; ++$sheet_id) {
-			++$event['total'];
-			++$event['sheets'][$sheet['rank']]['total'];
+        for ($sheet_id = $sheet['offset']; $sheet_id < $sheet['offset'] + $sheet['count']; ++$sheet_id) {
+            ++$event['total'];
+            ++$event['sheets'][$sheet['rank']]['total'];
 
-			$s = $sheet;
-			$s['num'] = $sheet_id - $sheet['offset'] + 1;
+            $s = $sheet;
+            $s['num'] = $sheet_id - $sheet['offset'] + 1;
 
-			if (array_key_exists($sheet_id, $reservations)) {
-				$s['mine'] = $login_user_id && $reservations[$sheet_id]['user_id'] == $login_user_id;
-				$s['reserved'] = true;
-				$s['reserved_at'] = (new \DateTime("{$reservations[$sheet_id]['reserved_at']}", new DateTimeZone('UTC')))->getTimestamp();
-			} else {
-				++$event['remains'];
-				++$event['sheets'][$s['rank']]['remains'];
-			}
+            if (array_key_exists($sheet_id, $reservations)) {
+                $s['mine'] = $login_user_id && $reservations[$sheet_id]['user_id'] == $login_user_id;
+                $s['reserved'] = true;
+                $s['reserved_at'] = (new \DateTime("{$reservations[$sheet_id]['reserved_at']}", new DateTimeZone('UTC')))->getTimestamp();
+            } else {
+                ++$event['remains'];
+                ++$event['sheets'][$s['rank']]['remains'];
+            }
 
-			$rank = $s['rank'];
-			unset($s['price']);
-			unset($s['rank']);
+            $rank = $s['rank'];
+            unset($s['price']);
+            unset($s['rank']);
 
-			if (false === isset($event['sheets'][$rank]['detail'])) {
-				$event['sheets'][$rank]['detail'] = [];
-			}
+            if (false === isset($event['sheets'][$rank]['detail'])) {
+                $event['sheets'][$rank]['detail'] = [];
+            }
 
-			array_push($event['sheets'][$rank]['detail'], $s);
-		}
+            array_push($event['sheets'][$rank]['detail'], $s);
+        }
     }
 
     $event['public'] = $event['public_fg'] ? true : false;
@@ -371,8 +371,8 @@ function sanitize_event(array $event): array
 }
 
 $app->post('/api/events/{id}/actions/reserve', function (Request $request, Response $response, array $args): Response {
-    $event_id = $args['id'];
-    $rank = $request->getParsedBodyParam('sheet_rank');
+        $event_id = $args['id'];
+        $rank = $request->getParsedBodyParam('sheet_rank');
 
     $user = get_login_user($this);
     $event = get_event($this->dbh, $event_id, $user['id']);
