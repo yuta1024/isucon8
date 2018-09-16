@@ -200,7 +200,7 @@ $app->post('/api/actions/login', function (Request $request, Response $response)
     $login_name = $request->getParsedBodyParam('login_name');
     $password = $request->getParsedBodyParam('password');
 
-    $user = $this->dbh->select_row('SELECT id, login_name, nickname FROM users WHERE login_name = ?', $login_name);
+    $user = $this->dbh->select_row('SELECT id, login_name, nickname, pass_hash FROM users WHERE login_name = ?', $login_name);
     $pass_hash = hash('sha256', $password); //$this->dbh->select_one('SELECT SHA2(?, 256)', $password);
 
     if (!$user || $pass_hash != $user['pass_hash']) {
