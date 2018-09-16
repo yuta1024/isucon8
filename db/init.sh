@@ -30,3 +30,5 @@ mysql -h172.17.119.2 -uisucon torb -e 'ALTER TABLE reservations ADD KEY canceled
 
 mysql -h172.17.119.2 -uisucon torb -e 'ALTER TABLE reservations ADD KEY user_id_canceled_idx (user_id, canceled)'
 mysql -h172.17.119.2 -uisucon torb -e 'ALTER TABLE reservations ADD KEY event_id_and_canceled_idx (event_id, canceled)'
+
+mysql -h172.17.119.2 -uisucon torb -e 'alter table reservations add index bbb(canceled, event_id, sheet_id, reserved_at)'
