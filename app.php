@@ -4,7 +4,6 @@ use Slim\Http\Request;
 use Slim\Http\Response;
 use Torb\PDOWrapper;
 use Psr\Container\ContainerInterface;
-//use SlimSession\Helper;
 
 date_default_timezone_set('Asia/Tokyo');
 define('TWIG_TEMPLATE', realpath(__DIR__).'/views');
@@ -145,12 +144,11 @@ $app->post('/api/users', function (Request $request, Response $response): Respon
  */
 function get_login_user(ContainerInterface $app)
 {
-    $user_id = $_COOKIE["user_id"];
-    if($user_id == null){
+    if(!isset($_COOKIE["user_id"])){
         return false;
     }
 
-    $user = $app->dbh->select_row('SELECT id, nickname FROM users WHERE id = ?', $user_id);
+    $user = $app->dbh->select_row('SELECT id, nickname FROM users WHERE id = ?', $_COOKIE["user_id"]);
     $user['id'] = (int) $user['id'];
     return $user;
 }
@@ -521,12 +519,11 @@ $app->post('/admin/api/actions/logout', function (Request $request, Response $re
  */
 function get_login_administrator(ContainerInterface $app)
 {
-    $administrator_id = $_COOKIE['administrator_id'];
-    if (null === $administrator_id) {
+    if (!isset($_COOKIE['administrator_id'])) {
         return false;
     }
 
-    $administrator = $app->dbh->select_row('SELECT id, nickname FROM administrators WHERE id = ?', $administrator_id);
+    $administrator = $app->dbh->select_row('SELECT id, nickname FROM administrators WHERE id = ?', $_COOKIE['administrator_id']);
     $administrator['id'] = (int) $administrator['id'];
     return $administrator;
 }
