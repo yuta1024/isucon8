@@ -160,7 +160,7 @@ $app->get('/api/users/{id}', function (Request $request, Response $response, arr
     $recent_reservations = function (ContainerInterface $app) use ($user) {
         $recent_reservations = [];
 
-        $rows = $app->dbh->select_all('SELECT r.*, s.rank AS sheet_rank, s.num AS sheet_num FROM reservations r INNER JOIN sheets s ON s.id = r.sheet_id WHERE r.user_id = ? ORDER BY r.last_updated DESC LIMIT 5', $user['id']);
+        $rows = $app->dbh->select_all('SELECT * FROM reservations WHERE user_id = ? ORDER BY last_updated DESC LIMIT 5', $user['id']);
         foreach ($rows as $row) {
             $sheet = get_sheet_by_id($row['sheet_id']);
             $event = get_event($app->dbh, $row['event_id']);
@@ -611,9 +611,9 @@ $app->get('/admin/api/reports/events/{id}/sales', function (Request $request, Re
     $reports = [];
 
     $reservations = $this->dbh->select_all('SELECT r.*, e.price AS event_price FROM reservations r INNER JOIN events e ON e.id = r.event_id WHERE r.event_id = ? ORDER BY reserved_at ASC', $event['id']);
-    $sheet = get_sheet_by_id($reservation['sheet_id']);
 
     foreach ($reservations as $reservation) {
+        $sheet = get_sheet_by_id($reservation['sheet_id']);
         $report = [
             'reservation_id' => $reservation['id'],
             'event_id' => $reservation['event_id'],
