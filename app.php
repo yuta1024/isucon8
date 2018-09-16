@@ -2,7 +2,6 @@
 
 use Slim\Http\Request;
 use Slim\Http\Response;
-use Torb\PDOWrapper;
 use Psr\Container\ContainerInterface;
 
 date_default_timezone_set('Asia/Tokyo');
@@ -69,20 +68,14 @@ $fillin_user = function (Request $request, Response $response, callable $next): 
 };
 
 $container['dbh'] = function (): PDOWrapper {
-    $database = 'torb';
-    $host = '172.17.119.2';
-    $port = 3306;
-    $user = 'isucon';
-    $password = 'isucon';
-
-    $dsn = "mysql:host={$host};port={$port};dbname={$database};charset=utf8mb4;";
     $pdo = new PDO(
-        $dsn,
-        $user,
-        $password,
+        'mysql:host=172.17.119.2;port=3306;dbname=torb;charset=utf8mb4;',
+        'isucon',
+        'isucon',
         [
             PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
             PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+            PDO::ATTR_PERSISTENT => true,
         ]
     );
 
@@ -676,3 +669,61 @@ function res_error(Response $response, string $error = 'unknown', int $status = 
         ->withHeader('Content-type', 'application/json')
         ->withJson(['error' => $error]);
 }
+
+class PDOWrapper
+{
+    private $pdo;
+
+    public function __call($name, $arguments)
+    {
+        return call_user_func_array([$this->pdo, $name], $arguments);
+    }
+
+    public function __construct(PDO $pdo)
+    {
+        $this->pdo = $pdo;
+        $this->pdo->query('SET SESSION sql_mode="STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION"');
+    }
+
+    public function select_one(string $query, ...$params)
+    {
+        $stmt = $this->pdo->prepare($query);
+        $stmt->execute($params);
+        $row = $stmt->fetch(PDO::FETCH_NUM);
+        $stmt->closeCursor();
+
+        return $row[0];
+    }
+
+    public function select_all(string $query, ...$params): array
+    {
+        $stmt = $this->pdo->prepare($query);
+        $stmt->execute($params);
+
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+
+    public function select_row(string $query, ...$params)
+    {
+        $stmt = $this->pdo->prepare($query);
+        $stmt->execute($params);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        $stmt->closeCursor();
+
+        return $row;
+    }
+
+    public function execute($query, ...$params): bool
+    {
+        $stmt = $this->pdo->prepare($query);
+
+        return $stmt->execute($params);
+    }
+
+    public function last_insert_id()
+    {
+        return $this->pdo->lastInsertId();
+    }
+}
+
+
