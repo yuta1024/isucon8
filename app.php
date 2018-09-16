@@ -417,7 +417,7 @@ $app->delete('/api/events/{id}/sheets/{ranks}/{num}/reservation', function (Requ
     $current_time = (new DateTime('now', new \DateTimeZone('UTC')))->format('Y-m-d H:i:s.u');
     $this->dbh->beginTransaction();
     try {
-        $reservation = $this->dbh->select_row('SELECT * FROM reservations WHERE event_id = ? AND sheet_id = ? AND canceled = 0 GROUP BY event_id HAVING reserved_at = MIN(reserved_at)', $event['id'], $num + $sheet_by_rank['offset']);
+        $reservation = $this->dbh->select_row('SELECT id, user_id, FROM reservations WHERE event_id = ? AND sheet_id = ? AND canceled = 0 GROUP BY event_id HAVING id = MIN(id)', $event['id'], $num + $sheet_by_rank['offset']);
         if (!$reservation) {
             $this->dbh->rollback();
 
