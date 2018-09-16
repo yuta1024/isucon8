@@ -173,7 +173,7 @@ $app->get('/api/users/{id}', function (Request $request, Response $response, arr
                 'id' => $row['id'],
                 'event' => $event,
                 'sheet_rank' => $sheet['rank'],
-                'sheet_num' => $sheet['num'],
+                'sheet_num' => $row['sheet_id'] - $sheet['offset'] + 1,
                 'price' => $price,
                 'reserved_at' => (new \DateTime("{$row['reserved_at']}", new DateTimeZone('UTC')))->getTimestamp(),
             ];
