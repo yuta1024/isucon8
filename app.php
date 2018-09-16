@@ -101,9 +101,8 @@ $container['dbh'] = function (): PDOWrapper {
 };
 
 $app->get('/', function (Request $request, Response $response): Response {
-    $events = array_map(function (array $event) {
-        return sanitize_event($event);
-    }, get_events($this->dbh));
+    $events = array_map(function (array $event) { return sanitize_event($event); },
+                        get_events($this->dbh));
 
     return $this->view->render($response, 'index.twig', [
         'events' => $events,
@@ -123,23 +122,12 @@ $app->post('/api/users', function (Request $request, Response $response): Respon
 
     $user_id = null;
 
-    $this->dbh->beginTransaction();
 
     try {
-        $duplicated = $this->dbh->select_one('SELECT * FROM users WHERE login_name = ?', $login_name);
-        if ($duplicated) {
-            $this->dbh->rollback();
-
-            return res_error($response, 'duplicated', 409);
-        }
-
         $this->dbh->execute('INSERT INTO users (login_name, pass_hash, nickname) VALUES (?, ?, ?)', $login_name, hash('sha256', $password), $nickname);
         $user_id = $this->dbh->last_insert_id();
-        $this->dbh->commit();
     } catch (\Throwable $throwable) {
-        $this->dbh->rollback();
-
-        return res_error($response);
+        return res_error($response, 'duplicated', 409);
     }
 
     return $response->withJson([
@@ -256,9 +244,8 @@ $app->post('/api/actions/logout', function (Request $request, Response $response
 })->add($login_required);
 
 $app->get('/api/events', function (Request $request, Response $response): Response {
-    $events = array_map(function (array $event) {
-        return sanitize_event($event);
-    }, get_events($this->dbh));
+    $events = array_map(function (array $event) { return sanitize_event($event); },
+                        get_events($this->dbh));
 
     return $response->withJson($events, null, JSON_NUMERIC_CHECK);
 });
@@ -286,12 +273,9 @@ function get_events(PDOWrapper $dbh, ?callable $where = null): array
         };
     }
 
-    $dbh->beginTransaction();
-
     $events = [];
-    $event_ids = array_map(function (array $event) {
-        return $event['id'];
-    }, array_filter($dbh->select_all('SELECT * FROM events ORDER BY id ASC'), $where));
+    $event_ids = array_map(function (array $event) { return $event['id']; },
+                           array_filter($dbh->select_all('SELECT * FROM events ORDER BY id ASC'), $where));
 
     foreach ($event_ids as $event_id) {
         $event = get_event($dbh, $event_id);
@@ -302,8 +286,6 @@ function get_events(PDOWrapper $dbh, ?callable $where = null): array
 
         array_push($events, $event);
     }
-
-    $dbh->commit();
 
     return $events;
 }
@@ -433,7 +415,7 @@ $app->post('/api/events/{id}/actions/reserve', function (Request $request, Respo
 $app->delete('/api/events/{id}/sheets/{ranks}/{num}/reservation', function (Request $request, Response $response, array $args): Response {
     $event_id = $args['id'];
     $rank = $args['ranks'];
-    $num = $args['num'];
+    $num = $args['num'] - 1;
 
     $user = get_login_user($this);
     $event = get_event($this->dbh, $event_id, $user['id']);
@@ -446,14 +428,17 @@ $app->delete('/api/events/{id}/sheets/{ranks}/{num}/reservation', function (Requ
         return res_error($response, 'invalid_rank', 404);
     }
 
-    $sheet = $this->dbh->select_row('SELECT * FROM sheets WHERE `rank` = ? AND num = ?', $rank, $num);
-    if (!$sheet) {
+    global $all_sheets_by_rank;
+    $sheet_by_rank = $all_sheets_by_rank[$rank];
+
+    if ($num < 0 ||  $sheet_by_rank['count'] <= $num) {
         return res_error($response, 'invalid_sheet', 404);
     }
 
+    $current_time = (new DateTime('now', new \DateTimeZone('UTC')))->format('Y-m-d H:i:s.u');
     $this->dbh->beginTransaction();
     try {
-        $reservation = $this->dbh->select_row('SELECT * FROM reservations WHERE event_id = ? AND sheet_id = ? AND canceled = 0 GROUP BY event_id HAVING reserved_at = MIN(reserved_at)', $event['id'], $sheet['id']);
+        $reservation = $this->dbh->select_row('SELECT * FROM reservations WHERE event_id = ? AND sheet_id = ? AND canceled = 0 GROUP BY event_id HAVING reserved_at = MIN(reserved_at)', $event['id'], $num + $sheet_by_rank['offset']);
         if (!$reservation) {
             $this->dbh->rollback();
 
@@ -466,7 +451,6 @@ $app->delete('/api/events/{id}/sheets/{ranks}/{num}/reservation', function (Requ
             return res_error($response, 'not_permitted', 403);
         }
 
-        $current_time = (new DateTime('now', new \DateTimeZone('UTC')))->format('Y-m-d H:i:s.u');
         $this->dbh->execute('UPDATE reservations SET canceled_at = ?, last_updated = ?, canceled = 1 WHERE id = ?', $current_time, $current_time, $reservation['id']);
         $this->dbh->commit();
     } catch (\Exception $e) {
@@ -480,7 +464,12 @@ $app->delete('/api/events/{id}/sheets/{ranks}/{num}/reservation', function (Requ
 
 function validate_rank(PDOWrapper $dbh, $rank)
 {
-    return $dbh->select_one('SELECT COUNT(*) FROM sheets WHERE `rank` = ?', $rank);
+    if ($rank == 'S') return true;
+    if ($rank == 'A') return true;
+    if ($rank == 'B') return true;
+    if ($rank == 'C') return true;
+
+    return false;
 }
 
 $admin_login_required = function (Request $request, Response $response, callable $next): Response {
@@ -567,11 +556,9 @@ $app->post('/admin/api/events', function (Request $request, Response $response):
 
     $event_id = null;
 
-    $this->dbh->beginTransaction();
     try {
         $this->dbh->execute('INSERT INTO events (title, public_fg, closed_fg, price) VALUES (?, ?, 0, ?)', $title, $public, $price);
         $event_id = $this->dbh->last_insert_id();
-        $this->dbh->commit();
     } catch (\Exception $e) {
         $this->dbh->rollback();
     }
@@ -612,10 +599,8 @@ $app->post('/admin/api/events/{id}/actions/edit', function (Request $request, Re
         return res_error($response, 'cannot_close_public_event', 400);
     }
 
-    $this->dbh->beginTransaction();
     try {
         $this->dbh->execute('UPDATE events SET public_fg = ?, closed_fg = ? WHERE id = ?', $public, $closed, $event['id']);
-        $this->dbh->commit();
     } catch (\Exception $e) {
         $this->dbh->rollback();
     }
