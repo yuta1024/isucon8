@@ -68,7 +68,7 @@ $fillin_user = function (Request $request, Response $response, callable $next): 
 };
 
 $container['dbh'] = function (): PDOWrapper {
-    $pdo = new PDO(
+    return new PDOWrapper(new PDO(
         'mysql:host=172.17.119.2;port=3306;dbname=torb;charset=utf8mb4;',
         'isucon',
         'isucon',
@@ -77,9 +77,7 @@ $container['dbh'] = function (): PDOWrapper {
             PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
             PDO::ATTR_PERSISTENT => true,
         ]
-    );
-
-    return new PDOWrapper($pdo);
+    ));
 };
 
 $app->get('/', function (Request $request, Response $response): Response {
@@ -129,14 +127,9 @@ $app->post('/api/users', function (Request $request, Response $response): Respon
  */
 function get_login_user(ContainerInterface $app)
 {
-    // TODO
     if(!isset($_COOKIE["user_id"])){
         return false;
     }
-
-//    $user = $app->dbh->select_row('SELECT id, nickname FROM users WHERE id = ?', $_COOKIE["user_id"]);
-//    $user['id'] = (int) $user['id'];
-//    return $user;
     return [
         'id' => (int)$_COOKIE["user_id"],
         'nickname' => $_COOKIE["nickname"],
@@ -207,7 +200,7 @@ $app->post('/api/actions/login', function (Request $request, Response $response)
     $login_name = $request->getParsedBodyParam('login_name');
     $password = $request->getParsedBodyParam('password');
 
-    $user = $this->dbh->select_row('SELECT * FROM users WHERE login_name = ?', $login_name);
+    $user = $this->dbh->select_row('SELECT id, login_name, nickname FROM users WHERE login_name = ?', $login_name);
     $pass_hash = hash('sha256', $password); //$this->dbh->select_one('SELECT SHA2(?, 256)', $password);
 
     if (!$user || $pass_hash != $user['pass_hash']) {
@@ -519,10 +512,6 @@ function get_login_administrator(ContainerInterface $app)
         return false;
     }
 
-    // TODO
-//    $administrator = $app->dbh->select_row('SELECT id, nickname FROM administrators WHERE id = ?', $_COOKIE['administrator_id']);
-//    $administrator['id'] = (int) $administrator['id'];
-//    return $administrator;
     return [
         'id' => (int)$_COOKIE['administrator_id'],
         'nickname' => $_COOKIE['admin_nickname'],
