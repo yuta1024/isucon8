@@ -233,7 +233,7 @@ $app->post('/api/actions/login', function (Request $request, Response $response)
     setcookie('login_name', $user['login_name'], time()+60*60*24*30, '/'); // 30days
     setcookie('nickname', $user['nickname'], time()+60*60*24*30, '/'); // 30days
 
-    $user = get_login_user($this);
+//    $user = get_login_user($this);
 
     return $response->withJson($user, null, JSON_NUMERIC_CHECK);
 });
