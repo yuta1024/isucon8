@@ -157,7 +157,7 @@ function get_login_user(ContainerInterface $app)
 //    $user['id'] = (int) $user['id'];
 //    return $user;
     return [
-        'id' => $_COOKIE["user_id"],
+        'id' => (int)$_COOKIE["user_id"],
         'nickname' => $_COOKIE["nickname"],
     ];
 }
@@ -542,7 +542,7 @@ function get_login_administrator(ContainerInterface $app)
 //    $administrator['id'] = (int) $administrator['id'];
 //    return $administrator;
     return [
-        'id' => $_COOKIE['administrator_id'],
+        'id' => (int)$_COOKIE['administrator_id'],
         'nickname' => $_COOKIE['admin_nickname'],
     ];
 }
