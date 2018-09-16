@@ -29,3 +29,4 @@ mysql -h172.17.119.2 -uisucon torb -e 'UPDATE reservations SET canceled = 1 WHER
 mysql -h172.17.119.2 -uisucon torb -e 'ALTER TABLE reservations ADD KEY canceled_idx (canceled)'
 
 mysql -h172.17.119.2 -uisucon torb -e 'ALTER TABLE reservations ADD KEY user_id_canceled_idx (user_id, canceled)'
+mysql -h172.17.119.2 -uisucon torb -e 'ALTER TABLE reservations ADD KEY event_id_and_canceled_idx (event_id, canceled)'
