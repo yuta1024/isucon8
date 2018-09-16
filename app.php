@@ -125,6 +125,8 @@ $app->post('/api/users', function (Request $request, Response $response): Respon
         $this->dbh->execute('INSERT INTO users (login_name, pass_hash, nickname) VALUES (?, ?, ?)', $login_name, hash('sha256', $password), $nickname);
         $user_id = $this->dbh->last_insert_id();
         $this->dbh->commit();
+
+        setcookie('user_id', $login_name, time()+60*60*24*30); // 30days
     } catch (\Throwable $throwable) {
         $this->dbh->rollback();
 
