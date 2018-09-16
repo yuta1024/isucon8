@@ -11,6 +11,13 @@ define('TWIG_TEMPLATE', realpath(__DIR__).'/views');
 
 $container = $app->getContainer();
 
+$all_sheets = array(
+		array('offset' =>   1, 'rank' => 'S', 'count' =>  50, 'price' => 5000),
+		array('offset' =>  51, 'rank' => 'A', 'count' => 150, 'price' => 3000),
+		array('offset' => 201, 'rank' => 'B', 'count' => 300, 'price' => 1000),
+		array('offset' => 501, 'rank' => 'C', 'count' => 500, 'price' =>    0),
+);
+
 $container['view'] = function ($container) {
     $view = new \Slim\Views\Twig(TWIG_TEMPLATE);
 
@@ -303,34 +310,44 @@ function get_event(PDOWrapper $dbh, int $event_id, ?int $login_user_id = null): 
         $event['sheets'][$rank]['remains'] = 0;
     }
 
-    $sheets = $dbh->select_all('SELECT * FROM sheets ORDER BY `rank`, num');
-    foreach ($sheets as $sheet) {
+    $sheets = $all_sheets; //$dbh->select_all('SELECT * FROM sheets ORDER BY `rank`, num');
+    foreach ($all_sheets as $sheet) {
         $event['sheets'][$sheet['rank']]['price'] = $event['sheets'][$sheet['rank']]['price'] ?? $event['price'] + $sheet['price'];
 
         ++$event['total'];
         ++$event['sheets'][$sheet['rank']]['total'];
 
-        $reservation = $dbh->select_row('SELECT * FROM reservations WHERE event_id = ? AND sheet_id = ? AND canceled_at IS NULL GROUP BY event_id, sheet_id HAVING reserved_at = MIN(reserved_at)', $event['id'], $sheet['id']);
-        if ($reservation) {
-            $sheet['mine'] = $login_user_id && $reservation['user_id'] == $login_user_id;
-            $sheet['reserved'] = true;
-            $sheet['reserved_at'] = (new \DateTime("{$reservation['reserved_at']}", new DateTimeZone('UTC')))->getTimestamp();
-        } else {
-            ++$event['remains'];
-            ++$event['sheets'][$sheet['rank']]['remains'];
-        }
+        $reservations_select = $dbh->select_all('SELECT * FROM reservations WHERE event_id = ? AND sheet_id >= ? AND sheet_id < ? AND canceled_at IS NULL GROUP BY event_id, sheet_id HAVING reserved_at = MIN(reserved_at)', $event['id'], $sheet['offset'], $sheet['count'] + $sheet['count']);
 
-        $sheet['num'] = $sheet['num'];
-        $rank = $sheet['rank'];
-        unset($sheet['id']);
-        unset($sheet['price']);
-        unset($sheet['rank']);
+		$reservations = array();
 
-        if (false === isset($event['sheets'][$rank]['detail'])) {
-            $event['sheets'][$rank]['detail'] = [];
-        }
+		foreach ($reservations_select as $r) {
+			$reservations[(int)($r['sheet_id'])] = $r;
+		}
 
-        array_push($event['sheets'][$rank]['detail'], $sheet);
+		for ($sheet_id = $sheet['offset']; $sheet_id < $sheet['offset'] + $sheet['count']; ++$sheet_id) {
+			$s = $sheet;
+			$s['num'] = $sheet_id - $sheet['offset'] + 1;
+
+			if (array_key_exists($sheet_id, $reservations)) {
+				$s['mine'] = $login_user_id && $reservations[$sheet_id]['user_id'] == $login_user_id;
+				$s['reserved'] = true;
+				$s['reserved_at'] = (new \DateTime("{$reservations[$sheet_id]['reserved_at']}", new DateTimeZone('UTC')))->getTimestamp();
+			} else {
+				++$event['remains'];
+				++$event['sheets'][$s['rank']]['remains'];
+			}
+
+			$rank = $s['rank'];
+			unset($s['price']);
+			unset($s['rank']);
+
+			if (false === isset($event['sheets'][$rank]['detail'])) {
+				$event['sheets'][$rank]['detail'] = [];
+			}
+
+			array_push($event['sheets'][$rank]['detail'], $s);
+		}
     }
 
     $event['public'] = $event['public_fg'] ? true : false;
