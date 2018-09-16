@@ -12,11 +12,28 @@ define('TWIG_TEMPLATE', realpath(__DIR__).'/views');
 $container = $app->getContainer();
 
 $all_sheets = array(
-		array('offset' =>   1, 'rank' => 'S', 'count' =>  50, 'price' => 5000),
-		array('offset' =>  51, 'rank' => 'A', 'count' => 150, 'price' => 3000),
-		array('offset' => 201, 'rank' => 'B', 'count' => 300, 'price' => 1000),
-		array('offset' => 501, 'rank' => 'C', 'count' => 500, 'price' =>    0),
+    array('offset' =>   1, 'rank' => 'S', 'count' =>  50, 'price' => 5000),
+    array('offset' =>  51, 'rank' => 'A', 'count' => 150, 'price' => 3000),
+    array('offset' => 201, 'rank' => 'B', 'count' => 300, 'price' => 1000),
+    array('offset' => 501, 'rank' => 'C', 'count' => 500, 'price' =>    0),
 );
+
+$all_sheets_by_rank = array(
+    'S' => $all_sheets[0],
+    'A' => $all_sheets[1],
+    'B' => $all_sheets[2],
+    'C' => $all_sheets[3],
+);
+
+function get_sheet_by_id($id) {
+    global $all_sheets;
+
+    foreach ($all_sheets as $s) {
+        if ($id < $s['offset'] + $s['count']) {
+            return $s;
+        }
+    }
+}
 
 $container['view'] = function ($container) {
     $view = new \Slim\Views\Twig(TWIG_TEMPLATE);
@@ -311,7 +328,7 @@ function get_event(PDOWrapper $dbh, int $event_id, ?int $login_user_id = null): 
     }
 
     global $all_sheets;
-    $sheets = $all_sheets; //$dbh->select_all('SELECT * FROM sheets ORDER BY `rank`, num');
+    $sheets = $all_sheets;
     foreach ($sheets as $sheet) {
         $event['sheets'][$sheet['rank']]['price'] = $event['sheets'][$sheet['rank']]['price'] ?? $event['price'] + $sheet['price'];
 
@@ -388,14 +405,36 @@ $app->post('/api/events/{id}/actions/reserve', function (Request $request, Respo
     $sheet = null;
     $reservation_id = null;
     while (true) {
-        $sheet = $this->dbh->select_row('SELECT * FROM sheets WHERE id NOT IN (SELECT sheet_id FROM reservations WHERE event_id = ? AND canceled_at IS NULL FOR UPDATE) AND `rank` = ? ORDER BY RAND() LIMIT 1', $event['id'], $rank);
-        if (!$sheet) {
+
+        global $all_sheets_by_rank;
+        $sheet = $all_sheets_by_rank[$rank];
+
+        $occupied_sheets = $this->dbh->select_all('SELECT sheet_id FROM reservations WHERE event_id = ? AND sheet_id >= ? AND sheet_id < ? AND canceled_at IS NULL ORDER BY sheet_id FOR UPDATE', $event['id'], $sheet['offset'] , $sheet['offset'] + $sheet['count']);
+
+        if (count($occupied_sheets) === (int)($sheet['count'])) {
             return res_error($response, 'sold_out', 409);
         }
 
+        $sheet_id = NULL;
+        $prev = $sheet['offset'] - 1;
+
+        $available = array();
+
+        foreach ($occupied_sheets as $s) {
+            for ($i = $prev + 1; $i < (int)($s['sheet_id']); ++$i) {
+                array_push($available, $i);
+            }
+            $prev = (int)($s['sheet_id']);
+        }
+
+        for ($i = $prev + 1; $i < $sheet['offset'] + $sheet['count']; ++$i) {
+            array_push($available, $i);
+        }
+
+        $sheet_id = $available[array_rand($available)];
         $this->dbh->beginTransaction();
         try {
-            $this->dbh->execute('INSERT INTO reservations (event_id, sheet_id, user_id, reserved_at) VALUES (?, ?, ?, ?)', $event['id'], $sheet['id'], $user['id'], (new DateTime('now', new \DateTimeZone('UTC')))->format('Y-m-d H:i:s.u'));
+            $this->dbh->execute('INSERT INTO reservations (event_id, sheet_id, user_id, reserved_at) VALUES (?, ?, ?, ?)', $event['id'], $sheet_id, $user['id'], (new DateTime('now', new \DateTimeZone('UTC')))->format('Y-m-d H:i:s.u'));
             $reservation_id = (int) $this->dbh->last_insert_id();
 
             $this->dbh->commit();
@@ -410,7 +449,7 @@ $app->post('/api/events/{id}/actions/reserve', function (Request $request, Respo
     return $response->withJson([
         'id' => $reservation_id,
         'sheet_rank' => $rank,
-        'sheet_num' => $sheet['num'],
+        'sheet_num' => $sheet_id - $sheet['offset'] + 1,
     ], 202, JSON_NUMERIC_CHECK);
 })->add($login_required);
 
