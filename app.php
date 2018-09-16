@@ -416,9 +416,7 @@ $app->post('/api/events/{id}/actions/reserve', function (Request $request, Respo
                             );
         $reservation_id = (int) $this->dbh->last_insert_id();
     } catch (\Exception $e) {
-        if (count($occupied_sheets) === (int)($sheet['count'])) {
-            return res_error($response, 'sold_out', 409);
-        }
+        return res_error($response, 'sold_out', 409);
     }
 
     $success = $this->dbh->select_row('SELECT sheet_id FROM reservations WHERE id = ?', $reservation_id);
