@@ -4,7 +4,7 @@ use Slim\Http\Request;
 use Slim\Http\Response;
 use Torb\PDOWrapper;
 use Psr\Container\ContainerInterface;
-use SlimSession\Helper;
+//use SlimSession\Helper;
 
 date_default_timezone_set('Asia/Tokyo');
 define('TWIG_TEMPLATE', realpath(__DIR__).'/views');
@@ -49,16 +49,6 @@ $container['view'] = function ($container) {
     $view->addExtension(new \Slim\Views\TwigExtension($container['router'], $baseUrl($container['request'])));
 
     return $view;
-};
-
-$app->add(new \Slim\Middleware\Session([
-    'name' => 'torb_session',
-    'autorefresh' => true,
-    'lifetime' => '1 week',
-]));
-
-$container['session'] = function (): Helper {
-    return new Helper();
 };
 
 $login_required = function (Request $request, Response $response, callable $next): Response {
@@ -155,10 +145,8 @@ $app->post('/api/users', function (Request $request, Response $response): Respon
  */
 function get_login_user(ContainerInterface $app)
 {
-    /** @var Helper $session */
-    $session = $app->session;
-    $user_id = $session->get('user_id');
-    if (null === $user_id) {
+    $user_id = $_COOKIE["user_id"];
+    if($user_id == null){
         return false;
     }
 
@@ -238,9 +226,7 @@ $app->post('/api/actions/login', function (Request $request, Response $response)
         return res_error($response, 'authentication_failed', 401);
     }
 
-    /** @var Helper $session */
-    $session = $this->session;
-    $session->set('user_id', $user['id']);
+    setcookie('user_id',$user['id'], time()+60*60*24*30); // 30days
 
     $user = get_login_user($this);
 
@@ -248,9 +234,7 @@ $app->post('/api/actions/login', function (Request $request, Response $response)
 });
 
 $app->post('/api/actions/logout', function (Request $request, Response $response): Response {
-    /** @var Helper $session */
-    $session = $this->session;
-    $session->delete('user_id');
+    unset($_COOKIE['user_id']);
 
     return $response->withStatus(204);
 })->add($login_required);
@@ -519,17 +503,13 @@ $app->post('/admin/api/actions/login', function (Request $request, Response $res
         return res_error($response, 'authentication_failed', 401);
     }
 
-    /** @var Helper $session */
-    $session = $this->session;
-    $session->set('administrator_id', $administrator['id']);
+    setcookie('administrator_id', $administrator['id'], time()+60*60*24*30);
 
     return $response->withJson($administrator, null, JSON_NUMERIC_CHECK);
 });
 
 $app->post('/admin/api/actions/logout', function (Request $request, Response $response): Response {
-    /** @var Helper $session */
-    $session = $this->session;
-    $session->delete('administrator_id');
+    unset($_COOKIE['administrator_id']);
 
     return $response->withStatus(204);
 })->add($admin_login_required);
@@ -541,9 +521,7 @@ $app->post('/admin/api/actions/logout', function (Request $request, Response $re
  */
 function get_login_administrator(ContainerInterface $app)
 {
-    /** @var Helper $session */
-    $session = $app->session;
-    $administrator_id = $session->get('administrator_id');
+    $administrator_id = $_COOKIE['administrator_id'];
     if (null === $administrator_id) {
         return false;
     }
