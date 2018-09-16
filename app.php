@@ -160,10 +160,11 @@ $app->get('/api/users/{id}', function (Request $request, Response $response, arr
     $recent_reservations = function (ContainerInterface $app) use ($user) {
         $recent_reservations = [];
 
-        $rows = $app->dbh->select_all('SELECT r.*, s.rank AS sheet_rank, s.num AS sheet_num FROM reservations r INNER JOIN sheets s ON s.id = r.sheet_id WHERE r.user_id = ? ORDER BY r.last_updated DESC LIMIT 5', $user['id']);
+        $rows = $app->dbh->select_all('SELECT * FROM reservations WHERE user_id = ? ORDER BY last_updated DESC LIMIT 5', $user['id']);
         foreach ($rows as $row) {
+            $sheet = get_sheet_by_id($row['sheet_id']);
             $event = get_event($app->dbh, $row['event_id']);
-            $price = $event['sheets'][$row['sheet_rank']]['price'];
+            $price = $event['sheets'][$sheet['rank']]['price'];
             unset($event['sheets']);
             unset($event['total']);
             unset($event['remains']);
@@ -171,8 +172,8 @@ $app->get('/api/users/{id}', function (Request $request, Response $response, arr
             $reservation = [
                 'id' => $row['id'],
                 'event' => $event,
-                'sheet_rank' => $row['sheet_rank'],
-                'sheet_num' => $row['sheet_num'],
+                'sheet_rank' => $sheet['rank'],
+                'sheet_num' => $row['sheet_id'] - $sheet['offset'] + 1,
                 'price' => $price,
                 'reserved_at' => (new \DateTime("{$row['reserved_at']}", new DateTimeZone('UTC')))->getTimestamp(),
             ];
@@ -609,17 +610,19 @@ $app->get('/admin/api/reports/events/{id}/sales', function (Request $request, Re
 
     $reports = [];
 
-    $reservations = $this->dbh->select_all('SELECT r.*, s.rank AS sheet_rank, s.num AS sheet_num, s.price AS sheet_price, e.price AS event_price FROM reservations r INNER JOIN sheets s ON s.id = r.sheet_id INNER JOIN events e ON e.id = r.event_id WHERE r.event_id = ? ORDER BY reserved_at ASC', $event['id']);
+    $reservations = $this->dbh->select_all('SELECT r.*, e.price AS event_price FROM reservations r INNER JOIN events e ON e.id = r.event_id WHERE r.event_id = ? ORDER BY reserved_at ASC', $event['id']);
+
     foreach ($reservations as $reservation) {
+        $sheet = get_sheet_by_id($reservation['sheet_id']);
         $report = [
             'reservation_id' => $reservation['id'],
             'event_id' => $reservation['event_id'],
-            'rank' => $reservation['sheet_rank'],
-            'num' => $reservation['sheet_num'],
+            'rank' => $sheet['rank'],
+            'num' => $reservation['sheet_id'] - $sheet['offset'] + 1,
             'user_id' => $reservation['user_id'],
             'sold_at' => (new \DateTime("{$reservation['reserved_at']}", new DateTimeZone('UTC')))->format('Y-m-d\TH:i:s.u').'Z',
             'canceled_at' => $reservation['canceled_at'] ? (new \DateTime("{$reservation['canceled_at']}", new DateTimeZone('UTC')))->format('Y-m-d\TH:i:s.u').'Z' : '',
-            'price' => $reservation['event_price'] + $reservation['sheet_price'],
+            'price' => $reservation['event_price'] + $sheet['price'],
         ];
 
         array_push($reports, $report);
@@ -630,17 +633,19 @@ $app->get('/admin/api/reports/events/{id}/sales', function (Request $request, Re
 
 $app->get('/admin/api/reports/sales', function (Request $request, Response $response): Response {
     $reports = [];
-    $reservations = $this->dbh->select_all('SELECT r.*, s.rank AS sheet_rank, s.num AS sheet_num, s.price AS sheet_price, e.id AS event_id, e.price AS event_price FROM reservations r INNER JOIN sheets s ON s.id = r.sheet_id INNER JOIN events e ON e.id = r.event_id ORDER BY reserved_at ASC');
+    $reservations = $this->dbh->select_all('SELECT r.*, e.id AS event_id, e.price AS event_price FROM reservations r INNER JOIN events e ON e.id = r.event_id ORDER BY reserved_at ASC');
+
     foreach ($reservations as $reservation) {
+        $sheet = get_sheet_by_id($reservation['sheet_id']);
         $report = [
             'reservation_id' => $reservation['id'],
             'event_id' => $reservation['event_id'],
-            'rank' => $reservation['sheet_rank'],
-            'num' => $reservation['sheet_num'],
+            'rank' => $sheet['rank'],
+            'num' => $reservation['sheet_id'] - $sheet['offset'] + 1,
             'user_id' => $reservation['user_id'],
             'sold_at' => (new \DateTime("{$reservation['reserved_at']}", new DateTimeZone('UTC')))->format('Y-m-d\TH:i:s.u').'Z',
             'canceled_at' => $reservation['canceled_at'] ? (new \DateTime("{$reservation['canceled_at']}", new DateTimeZone('UTC')))->format('Y-m-d\TH:i:s.u').'Z' : '',
-            'price' => $reservation['event_price'] + $reservation['sheet_price'],
+            'price' => $reservation['event_price'] + $sheet['price'],
         ];
 
         array_push($reports, $report);
