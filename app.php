@@ -125,6 +125,10 @@ $app->post('/api/users', function (Request $request, Response $response): Respon
         $this->dbh->execute('INSERT INTO users (login_name, pass_hash, nickname) VALUES (?, ?, ?)', $login_name, hash('sha256', $password), $nickname);
         $user_id = $this->dbh->last_insert_id();
         $this->dbh->commit();
+
+        setcookie('user_id', $user_id, time()+60*60*24*30, '/'); // 30days
+        setcookie('login_name', $login_name, time()+60*60*24*30, '/'); // 30days
+        setcookie('nickname', $nickname, time()+60*60*24*30, '/'); // 30days
     } catch (\Throwable $throwable) {
         $this->dbh->rollback();
 
@@ -144,6 +148,7 @@ $app->post('/api/users', function (Request $request, Response $response): Respon
  */
 function get_login_user(ContainerInterface $app)
 {
+    // TODO
     if(!isset($_COOKIE["user_id"])){
         return false;
     }
@@ -224,15 +229,18 @@ $app->post('/api/actions/login', function (Request $request, Response $response)
         return res_error($response, 'authentication_failed', 401);
     }
 
-    setcookie('user_id',$user['id'], time()+60*60*24*30); // 30days
+    setcookie('user_id', $user['id'], time()+60*60*24*30, '/'); // 30days
+    setcookie('login_name', $user['login_name'], time()+60*60*24*30, '/'); // 30days
+    setcookie('nickname', $user['nickname'], time()+60*60*24*30, '/'); // 30days
 
-    $user = get_login_user($this);
+//    $user = get_login_user($this);
 
     return $response->withJson($user, null, JSON_NUMERIC_CHECK);
 });
 
 $app->post('/api/actions/logout', function (Request $request, Response $response): Response {
     unset($_COOKIE['user_id']);
+    setcookie('user_id', null, -1, '/');
 
     return $response->withStatus(204);
 })->add($login_required);
@@ -502,13 +510,16 @@ $app->post('/admin/api/actions/login', function (Request $request, Response $res
         return res_error($response, 'authentication_failed', 401);
     }
 
-    setcookie('administrator_id', $administrator['id'], time()+60*60*24*30);
+    setcookie('administrator_id', $administrator['id'], time()+60*60*24*30, '/');
+    setcookie('admin_login_name', $administrator['login_name'], time()+60*60*24*30., '/');
+    setcookie('admin_nickname', $administrator['nickname'], time()+60*60*24*30, '/');
 
     return $response->withJson($administrator, null, JSON_NUMERIC_CHECK);
 });
 
 $app->post('/admin/api/actions/logout', function (Request $request, Response $response): Response {
     unset($_COOKIE['administrator_id']);
+    setcookie('administrator_id', null, -1, '/');
 
     return $response->withStatus(204);
 })->add($admin_login_required);
@@ -524,6 +535,7 @@ function get_login_administrator(ContainerInterface $app)
         return false;
     }
 
+    // TODO
     $administrator = $app->dbh->select_row('SELECT id, nickname FROM administrators WHERE id = ?', $_COOKIE['administrator_id']);
     $administrator['id'] = (int) $administrator['id'];
     return $administrator;
