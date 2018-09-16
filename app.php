@@ -634,9 +634,9 @@ $app->get('/admin/api/reports/events/{id}/sales', function (Request $request, Re
 $app->get('/admin/api/reports/sales', function (Request $request, Response $response): Response {
     $reports = [];
     $reservations = $this->dbh->select_all('SELECT r.*, e.id AS event_id, e.price AS event_price FROM reservations r INNER JOIN events e ON e.id = r.event_id ORDER BY reserved_at ASC');
-    $sheet = get_sheet_by_id($reservation['sheet_id']);
 
     foreach ($reservations as $reservation) {
+        $sheet = get_sheet_by_id($reservation['sheet_id']);
         $report = [
             'reservation_id' => $reservation['id'],
             'event_id' => $reservation['event_id'],
