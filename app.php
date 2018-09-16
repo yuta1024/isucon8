@@ -80,11 +80,11 @@ $fillin_user = function (Request $request, Response $response, callable $next): 
 };
 
 $container['dbh'] = function (): PDOWrapper {
-    $database = getenv('DB_DATABASE');
-    $host = getenv('DB_HOST');
-    $port = getenv('DB_PORT');
-    $user = getenv('DB_USER');
-    $password = getenv('DB_PASS');
+    $database = 'torb';
+    $host = '127.0.0.1';
+    $port = 3306;
+    $user = 'isucon';
+    $password = 'isucon';
 
     $dsn = "mysql:host={$host};port={$port};dbname={$database};charset=utf8mb4;";
     $pdo = new PDO(
@@ -404,47 +404,26 @@ $app->post('/api/events/{id}/actions/reserve', function (Request $request, Respo
 
     $sheet = null;
     $reservation_id = null;
-    while (true) {
 
-        global $all_sheets_by_rank;
-        $sheet = $all_sheets_by_rank[$rank];
+    global $all_sheets_by_rank;
+    $sheet = $all_sheets_by_rank[$rank];
 
-        $occupied_sheets = $this->dbh->select_all('SELECT sheet_id FROM reservations WHERE event_id = ? AND sheet_id >= ? AND sheet_id < ? AND canceled_at IS NULL ORDER BY sheet_id FOR UPDATE', $event['id'], $sheet['offset'] , $sheet['offset'] + $sheet['count']);
 
+    try {
+        $this->dbh->execute('INSERT INTO reservations (event_id, sheet_id, user_id, reserved_at) VALUES (?, (SELECT id FROM sheets WHERE id NOT IN (SELECT sheet_id FROM reservations AS r WHERE event_id = ? AND canceled_at IS NULL) AND `rank` = ? ORDER BY RAND() LIMIT 1), ?, ?)',
+                                     $event['id'], $event['id'], $rank, $user['id'],
+                                     (new DateTime('now', new \DateTimeZone('UTC')))->format('Y-m-d H:i:s.u')
+                            );
+        $reservation_id = (int) $this->dbh->last_insert_id();
+    } catch (\Exception $e) {
         if (count($occupied_sheets) === (int)($sheet['count'])) {
             return res_error($response, 'sold_out', 409);
         }
-
-        $sheet_id = NULL;
-        $prev = $sheet['offset'] - 1;
-
-        $available = array();
-
-        foreach ($occupied_sheets as $s) {
-            for ($i = $prev + 1; $i < (int)($s['sheet_id']); ++$i) {
-                array_push($available, $i);
-            }
-            $prev = (int)($s['sheet_id']);
-        }
-
-        for ($i = $prev + 1; $i < $sheet['offset'] + $sheet['count']; ++$i) {
-            array_push($available, $i);
-        }
-
-        $sheet_id = $available[array_rand($available)];
-        $this->dbh->beginTransaction();
-        try {
-            $this->dbh->execute('INSERT INTO reservations (event_id, sheet_id, user_id, reserved_at) VALUES (?, ?, ?, ?)', $event['id'], $sheet_id, $user['id'], (new DateTime('now', new \DateTimeZone('UTC')))->format('Y-m-d H:i:s.u'));
-            $reservation_id = (int) $this->dbh->last_insert_id();
-
-            $this->dbh->commit();
-        } catch (\Exception $e) {
-            $this->dbh->rollback();
-            continue;
-        }
-
-        break;
     }
+
+    $success = $this->dbh->select_row('SELECT sheet_id FROM reservations WHERE id = ?', $reservation_id);
+
+    $sheet_id = $success['sheet_id'];
 
     return $response->withJson([
         'id' => $reservation_id,
@@ -476,7 +455,7 @@ $app->delete('/api/events/{id}/sheets/{ranks}/{num}/reservation', function (Requ
 
     $this->dbh->beginTransaction();
     try {
-        $reservation = $this->dbh->select_row('SELECT * FROM reservations WHERE event_id = ? AND sheet_id = ? AND canceled_at IS NULL GROUP BY event_id HAVING reserved_at = MIN(reserved_at) FOR UPDATE', $event['id'], $sheet['id']);
+        $reservation = $this->dbh->select_row('SELECT * FROM reservations WHERE event_id = ? AND sheet_id = ? AND canceled_at IS NULL GROUP BY event_id HAVING reserved_at = MIN(reserved_at)', $event['id'], $sheet['id']);
         if (!$reservation) {
             $this->dbh->rollback();
 
@@ -653,7 +632,7 @@ $app->get('/admin/api/reports/events/{id}/sales', function (Request $request, Re
 
     $reports = [];
 
-    $reservations = $this->dbh->select_all('SELECT r.*, s.rank AS sheet_rank, s.num AS sheet_num, s.price AS sheet_price, e.price AS event_price FROM reservations r INNER JOIN sheets s ON s.id = r.sheet_id INNER JOIN events e ON e.id = r.event_id WHERE r.event_id = ? ORDER BY reserved_at ASC FOR UPDATE', $event['id']);
+    $reservations = $this->dbh->select_all('SELECT r.*, s.rank AS sheet_rank, s.num AS sheet_num, s.price AS sheet_price, e.price AS event_price FROM reservations r INNER JOIN sheets s ON s.id = r.sheet_id INNER JOIN events e ON e.id = r.event_id WHERE r.event_id = ? ORDER BY reserved_at ASC', $event['id']);
     foreach ($reservations as $reservation) {
         $report = [
             'reservation_id' => $reservation['id'],
@@ -674,7 +653,7 @@ $app->get('/admin/api/reports/events/{id}/sales', function (Request $request, Re
 
 $app->get('/admin/api/reports/sales', function (Request $request, Response $response): Response {
     $reports = [];
-    $reservations = $this->dbh->select_all('SELECT r.*, s.rank AS sheet_rank, s.num AS sheet_num, s.price AS sheet_price, e.id AS event_id, e.price AS event_price FROM reservations r INNER JOIN sheets s ON s.id = r.sheet_id INNER JOIN events e ON e.id = r.event_id ORDER BY reserved_at ASC FOR UPDATE');
+    $reservations = $this->dbh->select_all('SELECT r.*, s.rank AS sheet_rank, s.num AS sheet_num, s.price AS sheet_price, e.id AS event_id, e.price AS event_price FROM reservations r INNER JOIN sheets s ON s.id = r.sheet_id INNER JOIN events e ON e.id = r.event_id ORDER BY reserved_at ASC');
     foreach ($reservations as $reservation) {
         $report = [
             'reservation_id' => $reservation['id'],
